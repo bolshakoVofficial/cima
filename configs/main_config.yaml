@@ -1,0 +1,4 @@
+# -- Main parameters --
+n_agents: 3
+
+# -- RL hyperparameters --
