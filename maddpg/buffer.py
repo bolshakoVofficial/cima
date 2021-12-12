@@ -31,7 +31,7 @@ class MultiAgentReplayBuffer:
             self.actor_action_memory.append(
                 np.zeros((self.mem_size, self.n_actions)))
 
-    def store_transition(self, raw_obs, state, action, reward,
+    def store_transition(self, raw_obs, state, action, reward, im_reward,
                          raw_obs_, state_, done):
         # this introduces a bug: if we fill up the memory capacity and then
         # zero out our actor memory, the critic will still have memories to access
@@ -54,6 +54,7 @@ class MultiAgentReplayBuffer:
         self.state_memory[index] = state
         self.new_state_memory[index] = state_
         self.reward_memory[index] = reward
+        self.reward_memory[index] += im_reward
         self.terminal_memory[index] = done
         self.mem_cntr += 1
 
