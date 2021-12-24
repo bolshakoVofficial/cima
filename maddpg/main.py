@@ -18,7 +18,7 @@ def obs_list_to_state_vector(observation):
 
 
 if __name__ == '__main__':
-    map_name = "2m_vs_2zg_IM"
+    map_name = "2m_vs_3zg_IM"
     env = StarCraft2Env(map_name=map_name)
     env_info = env.get_env_info()
     n_agents = env_info["n_agents"]
@@ -32,37 +32,37 @@ if __name__ == '__main__':
 
     # action space is a list of arrays, assume each agent has same action space
     maddpg_agents = MADDPG(actor_dims, critic_dims, n_agents, n_actions,
-                           alpha=0.0005, beta=0.0005, chkpt_dir='tmp/maddpg/')
+                           alpha=0.001, beta=0.001, chkpt_dir='tmp/maddpg/')
 
-    memory = MultiAgentReplayBuffer(10_00, critic_dims, actor_dims,
+    memory = MultiAgentReplayBuffer(5000, critic_dims, actor_dims,
                                     n_actions, n_agents, batch_size=512)
 
-    PRINT_INTERVAL = 100
-    N_STEPS = 10_000
+    USE_IM = True
+    PRINT_INTERVAL = 1000
+    N_STEPS = 100_000
+    learn_every = 100
     MAX_STEPS = env_info["episode_limit"]
     score_history = []
     ep_len_history = []
     evaluate = False
     best_score = 0
 
-    noise = np.linspace(1, 0, num=N_STEPS)
-    a = np.linspace(1, 3, num=N_STEPS)
-    x = np.arange(N_STEPS)
-    y = (np.cos(2 * np.pi * 8.5 * x / N_STEPS) + 1) * a
-    sin_noise = (noise + noise * y) / 3 - 0.01
-
-    # noise_rate = 0.99
+    noise_rate = 0.99
     noise_rate_min = 0.01
-    # noise_decay_rate = noise_rate / N_STEPS
+    noise_decay_rate = noise_rate / N_STEPS
 
     heat_map = None
     hm_size = 10
 
     time_date = datetime.datetime.now().strftime('%Y_%m_%d')
-    time_day = datetime.datetime.now().strftime('%H_%M_%S')
+    time_day = datetime.datetime.now().strftime('%H%M%S')
     train_info_folder = "/train_info/"
 
-    folder_name = train_info_folder + time_date + "/" + time_day + "/"
+    short_map_name = map_name.split("_vs_")[0] + map_name.split("_vs_")[1].split("_")[0]
+    if USE_IM:
+        short_map_name += "_IM"
+
+    folder_name = train_info_folder + time_date + "/" + short_map_name + "_" + time_day + "/"
 
     if not os.path.isdir(os.getcwd() + train_info_folder + time_date):
         os.mkdir(os.getcwd() + train_info_folder + time_date)
@@ -104,8 +104,7 @@ if __name__ == '__main__':
             episode_reward = []
             episode_im_reward = [[] for i in range(n_agents)]
 
-        # noise_rate = max(noise_rate_min, noise_rate - noise_decay_rate)
-        noise_rate = max(noise_rate_min, sin_noise[step])
+        noise_rate = max(noise_rate_min, noise_rate - noise_decay_rate)
         agents_state_novelties = []
         heat_map *= 0.9998
         positions = np.array(
@@ -144,29 +143,30 @@ if __name__ == '__main__':
         # actions = [baseline_2v10[episode_step] if episode_step < len(baseline_2v10)
         #            else avail_attack_actions[i][0] for i in range(n_agents)]
 
-        # agents_positions = [[env.agents[i].health > 0,
-        #                      list(map(int, [env.agents[i].pos.x, env.agents[i].pos.y]))]
-        #                     for i in env.agents.keys()]
-        # for alive, pos in agents_positions:
-        #     if alive:
-        #         state_novelty[pos[0], pos[1]] += 1
-        #
-        #     agents_state_novelties.append([alive, state_novelty[pos[0], pos[1]]])
-        #
-        # sn_min, sn_max = state_novelty.min(), state_novelty.max()
-        # if not len(prev_agents_positions):
-        #     prev_agents_positions = agents_positions.copy()
-        #
-        # intrinsic_rewards = []
-        # for agent_idx in range(n_agents):
-        #     if prev_agents_positions[agent_idx][1] == agents_positions[agent_idx][1]:
-        #         intrinsic_rewards.append(0)
-        #     else:
-        #         alive, agents_sn = agents_state_novelties[agent_idx]
-        #         im_reward = (1 - (agents_sn - sn_min) / sn_max) ** 2 if alive else 0
-        #         intrinsic_rewards.append(im_reward)
+        if USE_IM:
+            agents_positions = [[env.agents[i].health > 0,
+                                 list(map(int, [env.agents[i].pos.x, env.agents[i].pos.y]))]
+                                for i in env.agents.keys()]
+            for alive, pos in agents_positions:
+                if alive:
+                    state_novelty[pos[0], pos[1]] += 1
 
-        intrinsic_rewards = [0 for _ in range(n_agents)]  # no IM
+                agents_state_novelties.append([alive, state_novelty[pos[0], pos[1]]])
+
+            sn_min, sn_max = state_novelty.min(), state_novelty.max()
+            if not len(prev_agents_positions):
+                prev_agents_positions = agents_positions.copy()
+
+            intrinsic_rewards = []
+            for agent_idx in range(n_agents):
+                if prev_agents_positions[agent_idx][1] == agents_positions[agent_idx][1]:
+                    intrinsic_rewards.append(0)
+                else:
+                    alive, agents_sn = agents_state_novelties[agent_idx]
+                    im_reward = (1 - (agents_sn - sn_min) / sn_max) ** 2 if alive else 0
+                    intrinsic_rewards.append(im_reward)
+        else:
+            intrinsic_rewards = [0 for _ in range(n_agents)]
 
         reward, done, info = env.step(actions)
         obs_ = env.get_obs()
@@ -184,30 +184,35 @@ if __name__ == '__main__':
         memory.store_transition(obs, state, actions_probabilities, reward, intrinsic_rewards, obs_, state_,
                                 done)
 
-        if step % 100 == 0 and not evaluate:
+        if step % learn_every == 0 and not evaluate:
             maddpg_agents.learn(memory)
 
         obs = obs_
 
-        writer.add_scalar('noise_rate', noise_rate, step)
+        writer.add_scalar('Stats/noise_rate', noise_rate, step)
 
         if done:
             sum_reward = sum(episode_reward)
             score_history.append(sum_reward)
             ep_len_history.append(episode_step)
+            healths_dict = {f"agent_{i}": env.agents[i].health for i in env.agents.keys()}
+            healths_dict["enemy_total"] = sum([env.enemies[i].health for i in env.enemies.keys()])
 
             im_rewards_dict = {f"agent_{i}": sum(episode_im_reward[i]) for i in range(n_agents)}
             writer.add_scalar('Rewards/external_reward', sum_reward, step)
             writer.add_scalars('Rewards/IM_rewards', im_rewards_dict, step)
-            writer.add_scalar('episode_length', episode_step, step)
+            writer.add_scalars('Stats/end_health_points', healths_dict, step)
+            writer.add_scalar('Stats/episode_length', episode_step, step)
 
-            sn_img = np.zeros((env.map_x, env.map_y, 3), dtype=np.uint8)
-            sn_img[:, :, 0] = (state_novelty / state_novelty.max() * 255).astype(np.uint8)
-            sn_img = cv2.rotate(cv2.resize(sn_img, dsize=(env.map_x * hm_size, env.map_y * hm_size),
-                                           interpolation=cv2.INTER_CUBIC), cv2.ROTATE_90_COUNTERCLOCKWISE)
             hm_img = cv2.cvtColor(heatmap_image, cv2.COLOR_BGR2RGB)
-            writer.add_image('Heatmaps/state_novelty_grid', sn_img, step, dataformats='HWC')
             writer.add_image('Heatmaps/agents_trajectories', hm_img, step, dataformats='HWC')
+
+            if USE_IM:
+                sn_img = np.zeros((env.map_x, env.map_y, 3), dtype=np.uint8)
+                sn_img[:, :, 0] = (state_novelty / state_novelty.max() * 255).astype(np.uint8)
+                sn_img = cv2.rotate(cv2.resize(sn_img, dsize=(env.map_x * hm_size, env.map_y * hm_size),
+                                               interpolation=cv2.INTER_CUBIC), cv2.ROTATE_90_COUNTERCLOCKWISE)
+                writer.add_image('Heatmaps/state_novelty_grid', sn_img, step, dataformats='HWC')
 
             avg_score = np.mean(score_history[-20:])
             if not evaluate:
