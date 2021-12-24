@@ -18,7 +18,7 @@ def obs_list_to_state_vector(observation):
 
 
 if __name__ == '__main__':
-    map_name = "2m_vs_10zg_IM"
+    map_name = "2m_vs_2zg_IM"
     env = StarCraft2Env(map_name=map_name)
     env_info = env.get_env_info()
     n_agents = env_info["n_agents"]
@@ -34,11 +34,11 @@ if __name__ == '__main__':
     maddpg_agents = MADDPG(actor_dims, critic_dims, n_agents, n_actions,
                            alpha=0.0005, beta=0.0005, chkpt_dir='tmp/maddpg/')
 
-    memory = MultiAgentReplayBuffer(10_000, critic_dims, actor_dims,
-                                    n_actions, n_agents, batch_size=1024)
+    memory = MultiAgentReplayBuffer(10_00, critic_dims, actor_dims,
+                                    n_actions, n_agents, batch_size=512)
 
-    PRINT_INTERVAL = 1000
-    N_STEPS = 200_000
+    PRINT_INTERVAL = 100
+    N_STEPS = 10_000
     MAX_STEPS = env_info["episode_limit"]
     score_history = []
     ep_len_history = []
@@ -48,7 +48,7 @@ if __name__ == '__main__':
     noise = np.linspace(1, 0, num=N_STEPS)
     a = np.linspace(1, 3, num=N_STEPS)
     x = np.arange(N_STEPS)
-    y = (np.cos(2 * np.pi * 4.5 * x / N_STEPS) + 1) * a
+    y = (np.cos(2 * np.pi * 8.5 * x / N_STEPS) + 1) * a
     sin_noise = (noise + noise * y) / 3 - 0.01
 
     # noise_rate = 0.99
@@ -144,34 +144,33 @@ if __name__ == '__main__':
         # actions = [baseline_2v10[episode_step] if episode_step < len(baseline_2v10)
         #            else avail_attack_actions[i][0] for i in range(n_agents)]
 
-        agents_positions = [[env.agents[i].health > 0,
-                             list(map(int, [env.agents[i].pos.x, env.agents[i].pos.y]))]
-                            for i in env.agents.keys()]
-        for alive, pos in agents_positions:
-            if alive:
-                state_novelty[pos[0], pos[1]] += 1
+        # agents_positions = [[env.agents[i].health > 0,
+        #                      list(map(int, [env.agents[i].pos.x, env.agents[i].pos.y]))]
+        #                     for i in env.agents.keys()]
+        # for alive, pos in agents_positions:
+        #     if alive:
+        #         state_novelty[pos[0], pos[1]] += 1
+        #
+        #     agents_state_novelties.append([alive, state_novelty[pos[0], pos[1]]])
+        #
+        # sn_min, sn_max = state_novelty.min(), state_novelty.max()
+        # if not len(prev_agents_positions):
+        #     prev_agents_positions = agents_positions.copy()
+        #
+        # intrinsic_rewards = []
+        # for agent_idx in range(n_agents):
+        #     if prev_agents_positions[agent_idx][1] == agents_positions[agent_idx][1]:
+        #         intrinsic_rewards.append(0)
+        #     else:
+        #         alive, agents_sn = agents_state_novelties[agent_idx]
+        #         im_reward = (1 - (agents_sn - sn_min) / sn_max) ** 2 if alive else 0
+        #         intrinsic_rewards.append(im_reward)
 
-            agents_state_novelties.append([alive, state_novelty[pos[0], pos[1]]])
-
-        sn_min, sn_max = state_novelty.min(), state_novelty.max()
-        if not len(prev_agents_positions):
-            prev_agents_positions = agents_positions.copy()
-
-        intrinsic_rewards = []
-        for agent_idx in range(n_agents):
-            if prev_agents_positions[agent_idx][1] == agents_positions[agent_idx][1]:
-                intrinsic_rewards.append(0)
-            else:
-                alive, agents_sn = agents_state_novelties[agent_idx]
-                im_reward = (1 - (agents_sn - sn_min) / sn_max) ** 2 if alive else 0
-                intrinsic_rewards.append(im_reward)
-
-        # intrinsic_rewards = [(1 - (x[1] - sn_min) / sn_max) ** 2 * 2 if x[0] else 0 for x in agents_state_novelties]
-        # intrinsic_rewards = [0 for _ in range(n_agents)]  # no IM
+        intrinsic_rewards = [0 for _ in range(n_agents)]  # no IM
 
         reward, done, info = env.step(actions)
         obs_ = env.get_obs()
-        prev_agents_positions = agents_positions.copy()
+        # prev_agents_positions = agents_positions.copy()
 
         episode_reward.append(reward)
         [episode_im_reward[i].append(intrinsic_rewards[i]) for i in range(n_agents)]
