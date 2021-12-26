@@ -18,7 +18,7 @@ def obs_list_to_state_vector(observation):
 
 
 if __name__ == '__main__':
-    map_name = "2m_vs_3zg_IM"
+    map_name = "2m_vs_10zg_IM"
     env = StarCraft2Env(map_name=map_name)
     env_info = env.get_env_info()
     n_agents = env_info["n_agents"]
@@ -34,13 +34,15 @@ if __name__ == '__main__':
     maddpg_agents = MADDPG(actor_dims, critic_dims, n_agents, n_actions,
                            alpha=0.001, beta=0.001, chkpt_dir='tmp/maddpg/')
 
-    memory = MultiAgentReplayBuffer(5000, critic_dims, actor_dims,
-                                    n_actions, n_agents, batch_size=512)
+    memory = MultiAgentReplayBuffer(10000, critic_dims, actor_dims,
+                                    n_actions, n_agents, batch_size=1024)
 
     USE_IM = True
     PRINT_INTERVAL = 1000
-    N_STEPS = 100_000
+    N_STEPS = 100_0000
     learn_every = 100
+    TEST_EPISODES = 4000
+
     MAX_STEPS = env_info["episode_limit"]
     score_history = []
     ep_len_history = []
@@ -84,6 +86,7 @@ if __name__ == '__main__':
     done = True
     step = 0
     episode_step = 0
+    test_episode_number = 0
     obs = None
     episode_reward = []
     episode_im_reward = [[] for i in range(n_agents)]
@@ -92,8 +95,16 @@ if __name__ == '__main__':
     baseline_2v2 = [2, 4] * 10
     baseline_2v10 = [5] * 6 + [3] * 7
 
-    while step < N_STEPS:
+    while step < N_STEPS + (TEST_EPISODES * MAX_STEPS):
         if done:
+            if step >= N_STEPS:
+                if evaluate:
+                    test_episode_number += 1
+                evaluate = True
+
+                if test_episode_number >= TEST_EPISODES:
+                    break
+
             env.reset()
             if heat_map is None:
                 heat_map = np.zeros((env.map_x * hm_size,
@@ -127,13 +138,19 @@ if __name__ == '__main__':
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break
 
-        actions_probabilities = maddpg_agents.choose_action(obs, noise_rate)
-        actions = [random.choices(np.arange(n_actions),
-                                  weights=actions_probabilities[i] * env.get_avail_actions()[i])[0]
-                   for i in range(n_agents)]
-        avail_attack_actions = [[x for x in range(6, len(env.get_avail_agent_actions(i)))
-                                 if env.get_avail_agent_actions(i)[x]] if env.agents[i].health > 0 else [0]
-                                for i in env.agents.keys()]
+        if not evaluate:
+            actions_probabilities = maddpg_agents.choose_action(obs, noise_rate)
+            actions = [random.choices(np.arange(n_actions),
+                                      weights=actions_probabilities[i] * env.get_avail_actions()[i])[0]
+                       for i in range(n_agents)]
+        else:
+            actions_probabilities = maddpg_agents.choose_action(obs, 0)
+            actions = [(actions_probabilities[i] * env.get_avail_actions()[i]).argmax()
+                       for i in range(n_agents)]
+
+        # avail_attack_actions = [[x for x in range(6, len(env.get_avail_agent_actions(i)))
+        #                          if env.get_avail_agent_actions(i)[x]] if env.agents[i].health > 0 else [0]
+        #                         for i in env.agents.keys()]
 
         # baseline_2v2
         # actions = [baseline_2v2[episode_step] if not len(avail_attack_actions[i])
