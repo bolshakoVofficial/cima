@@ -18,7 +18,7 @@ def obs_list_to_state_vector(observation):
 
 
 if __name__ == '__main__':
-    map_name = "2m_vs_4zg_IM"
+    map_name = "3m_vs_6zg_IM"
 
     # scenarios: MADDPG, MADDPG_GRID_SN, MADDPG_AE
     scenario = "MADDPG_AE"
@@ -38,13 +38,13 @@ if __name__ == '__main__':
     maddpg_agents = MADDPG(n_agents, obs_shape, n_actions, scenario, alpha=0.001, beta=0.001,
                            checkpoint_dir='tmp/maddpg/')
 
-    memory = MultiAgentReplayBuffer(20000, critic_dims, actor_dims,
-                                    n_actions, n_agents, batch_size=512)
+    memory = MultiAgentReplayBuffer(50000, critic_dims, actor_dims,
+                                    n_actions, n_agents, batch_size=1024)
 
     PRINT_INTERVAL = 1000
-    N_STEPS = 200_000
+    N_STEPS = 1_000_000
     learn_every = 200
-    TEST_EPISODES = 50
+    TEST_EPISODES = 100
 
     MAX_STEPS = env_info["episode_limit"]
     score_history = []
