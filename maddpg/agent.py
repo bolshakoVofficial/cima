@@ -1,24 +1,32 @@
 import torch as T
-from networks import ActorNetwork, CriticNetwork
+import torch.nn.functional as F
+import numpy as np
+from networks import ActorNetwork, CriticNetwork, AutoEncoderLinear
 
 
 class Agent:
-    def __init__(self, actor_dims, critic_dims, n_actions, n_agents, agent_idx, chkpt_dir,
-                 alpha=0.0005, beta=0.0005, gamma=0.99, tau=0.01):
+    def __init__(self, actor_dims, critic_dims, n_actions, n_agents, agent_idx, scenario,
+                 checkpoint_dir, alpha=0.0005, beta=0.0005, gamma=0.99, tau=0.01):
         self.gamma = gamma
         self.tau = tau
         self.n_actions = n_actions
         self.agent_name = 'agent_%s' % agent_idx
+        self.scenario = scenario
         self.actor = ActorNetwork(alpha, actor_dims, n_actions,
-                                  name=self.agent_name + '_actor', chkpt_dir=chkpt_dir)
+                                  name=self.agent_name + '_actor', checkpoint_dir=checkpoint_dir)
         self.critic = CriticNetwork(beta, critic_dims, n_agents, n_actions,
-                                    name=self.agent_name + '_critic', chkpt_dir=chkpt_dir)
+                                    name=self.agent_name + '_critic', checkpoint_dir=checkpoint_dir)
         self.target_actor = ActorNetwork(alpha, actor_dims, n_actions,
-                                         name=self.agent_name + '_target_actor', chkpt_dir=chkpt_dir)
+                                         name=self.agent_name + '_target_actor', checkpoint_dir=checkpoint_dir)
         self.target_critic = CriticNetwork(beta, critic_dims, n_agents, n_actions,
-                                           name=self.agent_name + '_target_critic', chkpt_dir=chkpt_dir)
+                                           name=self.agent_name + '_target_critic', checkpoint_dir=checkpoint_dir)
 
         self.update_network_parameters(tau=1)
+
+        if self.scenario == "MADDPG_AE":
+            self.env_model = AutoEncoderLinear(actor_dims, n_actions, name=self.agent_name + '_env_model',
+                                               lr=0.001, checkpoint_dir=checkpoint_dir)
+            self.im_reward_multiplier = 100
 
     def choose_action(self, observation, noise_rate):
         state = T.tensor([observation], dtype=T.float).to(self.actor.device)
@@ -27,6 +35,23 @@ class Agent:
         action = actions + noise * noise_rate
 
         return action.detach().cpu().numpy()[0]
+
+    def get_intrinsic_reward(self, observation, observation_, action):
+        if self.scenario == "MADDPG_AE":
+            action_ohe = np.zeros(self.n_actions)
+            action_ohe[action] = 1
+
+            state = np.concatenate((observation, action_ohe))
+            state = T.tensor([state], dtype=T.float).to(self.actor.device)
+            model_out = self.env_model.forward(state)
+            im_reward = F.mse_loss(model_out,
+                                   T.from_numpy(np.expand_dims(observation_, 0)).to(
+                                       self.env_model.device)).cpu().detach().numpy() * self.im_reward_multiplier
+            im_reward = im_reward.tolist()
+        else:
+            im_reward = 0
+
+        return im_reward
 
     def update_network_parameters(self, tau=None):
         if tau is None:
@@ -59,9 +84,11 @@ class Agent:
         self.target_actor.save_checkpoint()
         self.critic.save_checkpoint()
         self.target_critic.save_checkpoint()
+        self.env_model.save_checkpoint()
 
     def load_models(self):
         self.actor.load_checkpoint()
         self.target_actor.load_checkpoint()
         self.critic.load_checkpoint()
         self.target_critic.load_checkpoint()
+        self.env_model.load_checkpoint()

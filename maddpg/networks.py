@@ -6,10 +6,10 @@ import torch.optim as optim
 
 
 class CriticNetwork(nn.Module):
-    def __init__(self, beta, input_dims, n_agents, n_actions, name, chkpt_dir):
+    def __init__(self, beta, input_dims, n_agents, n_actions, name, checkpoint_dir):
         super(CriticNetwork, self).__init__()
 
-        self.chkpt_file = os.path.join(chkpt_dir, name)
+        self.checkpoint_file = os.path.join(checkpoint_dir, name)
 
         self.fc1 = nn.Linear(input_dims + n_agents * n_actions, 128)
         self.fc2 = nn.Linear(128, 128)
@@ -28,17 +28,17 @@ class CriticNetwork(nn.Module):
         return q
 
     def save_checkpoint(self):
-        T.save(self.state_dict(), self.chkpt_file)
+        T.save(self.state_dict(), self.checkpoint_file)
 
     def load_checkpoint(self):
-        self.load_state_dict(T.load(self.chkpt_file))
+        self.load_state_dict(T.load(self.checkpoint_file))
 
 
 class ActorNetwork(nn.Module):
-    def __init__(self, alpha, input_dims, n_actions, name, chkpt_dir):
+    def __init__(self, alpha, input_dims, n_actions, name, checkpoint_dir):
         super(ActorNetwork, self).__init__()
 
-        self.chkpt_file = os.path.join(chkpt_dir, name)
+        self.checkpoint_file = os.path.join(checkpoint_dir, name)
 
         self.fc1 = nn.Linear(input_dims, 64)
         self.fc2 = nn.Linear(64, 64)
@@ -57,7 +57,47 @@ class ActorNetwork(nn.Module):
         return pi
 
     def save_checkpoint(self):
-        T.save(self.state_dict(), self.chkpt_file)
+        T.save(self.state_dict(), self.checkpoint_file)
 
     def load_checkpoint(self):
-        self.load_state_dict(T.load(self.chkpt_file))
+        self.load_state_dict(T.load(self.checkpoint_file))
+
+
+class AutoEncoderLinear(nn.Module):
+    def __init__(self, input_dims, n_actions, name, lr, checkpoint_dir):
+        super(AutoEncoderLinear, self).__init__()
+
+        self.checkpoint_file = os.path.join(checkpoint_dir, name)
+
+        self.encoder = nn.Sequential(
+            nn.Linear(input_dims + n_actions, 128),
+            nn.ReLU(),
+            nn.Linear(128, 64),
+            nn.ReLU(),
+            nn.Linear(64, 32)
+        )
+
+        self.decoder = nn.Sequential(
+            nn.Linear(32, 64),
+            nn.ReLU(),
+            nn.Linear(64, 128),
+            nn.ReLU(),
+            nn.Linear(128, input_dims),
+            nn.Tanh()
+        )
+
+        self.optimizer = optim.Adam(self.parameters(), lr=lr)
+        self.device = T.device('cuda' if T.cuda.is_available() else 'cpu')
+
+        self.to(self.device)
+
+    def forward(self, x):
+        encoded = self.encoder(x)
+        decoded = self.decoder(encoded)
+        return decoded
+
+    def save_checkpoint(self):
+        T.save(self.state_dict(), self.checkpoint_file)
+
+    def load_checkpoint(self):
+        self.load_state_dict(T.load(self.checkpoint_file))

@@ -4,16 +4,16 @@ from agent import Agent
 
 
 class MADDPG:
-    def __init__(self, actor_dims, critic_dims, n_agents, n_actions,
-                 scenario='simple', alpha=0.0005, beta=0.0005, chkpt_dir='tmp/maddpg/'):
+    def __init__(self, n_agents, obs_shape, n_actions, scenario,
+                 alpha, beta, checkpoint_dir='tmp/maddpg/'):
         self.agents = []
         self.n_agents = n_agents
         self.n_actions = n_actions
-        chkpt_dir += scenario
+        self.scenario = scenario
+        checkpoint_dir += scenario
         for agent_idx in range(self.n_agents):
-            self.agents.append(Agent(actor_dims[agent_idx], critic_dims,
-                                     n_actions, n_agents, agent_idx, alpha=alpha, beta=beta,
-                                     chkpt_dir=chkpt_dir))
+            self.agents.append(Agent(obs_shape, obs_shape * n_agents, n_actions, n_agents, agent_idx,
+                                     scenario, alpha=alpha, beta=beta, checkpoint_dir=checkpoint_dir))
 
     def save_checkpoint(self):
         print('... saving checkpoint ...')
@@ -32,11 +32,18 @@ class MADDPG:
             actions.append(action)
         return actions
 
+    def get_intrinsic_rewards(self, obs, obs_, actions):
+        im_rewards = []
+        for agent_idx, agent in enumerate(self.agents):
+            im_reward = agent.get_intrinsic_reward(obs[agent_idx], obs_[agent_idx], actions[agent_idx])
+            im_rewards.append(im_reward)
+        return im_rewards
+
     def learn(self, memory):
         if not memory.ready():
             return
 
-        actor_states, states, actions, rewards, \
+        actor_states, states, actions, actions_taken, rewards, \
         actor_new_states, states_, dones = memory.sample_buffer()
 
         device = self.agents[0].actor.device
@@ -86,3 +93,18 @@ class MADDPG:
             agent.actor.optimizer.step()
 
             agent.update_network_parameters()
+
+        if self.scenario == "MADDPG_AE":
+            device = self.agents[0].env_model.device
+
+            obs = T.tensor(actor_states, dtype=T.float).to(device)
+            obs_ = T.tensor(actor_new_states, dtype=T.float).to(device)
+            actions_taken = T.tensor(actions_taken, dtype=T.float).to(device)
+
+            for agent_idx, agent in enumerate(self.agents):
+                predicted_obs = agent.env_model.forward(T.cat([obs[agent_idx],
+                                                               actions_taken[agent_idx]], dim=1))
+                env_model_loss = F.mse_loss(obs_[agent_idx], predicted_obs)
+                agent.env_model.optimizer.zero_grad()
+                env_model_loss.backward(retain_graph=True)
+                agent.env_model.optimizer.step()

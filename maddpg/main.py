@@ -18,7 +18,11 @@ def obs_list_to_state_vector(observation):
 
 
 if __name__ == '__main__':
-    map_name = "2m_vs_10zg_IM"
+    map_name = "2m_vs_2zg_IM"
+
+    # scenarios: MADDPG, MADDPG_GRID_SN, MADDPG_AE
+    scenario = "MADDPG_AE"
+
     env = StarCraft2Env(map_name=map_name)
     env_info = env.get_env_info()
     n_agents = env_info["n_agents"]
@@ -31,17 +35,16 @@ if __name__ == '__main__':
     critic_dims = sum(actor_dims)
 
     # action space is a list of arrays, assume each agent has same action space
-    maddpg_agents = MADDPG(actor_dims, critic_dims, n_agents, n_actions,
-                           alpha=0.001, beta=0.001, chkpt_dir='tmp/maddpg/')
+    maddpg_agents = MADDPG(n_agents, obs_shape, n_actions, scenario, alpha=0.001, beta=0.001,
+                           checkpoint_dir='tmp/maddpg/')
 
     memory = MultiAgentReplayBuffer(10000, critic_dims, actor_dims,
-                                    n_actions, n_agents, batch_size=1024)
+                                    n_actions, n_agents, batch_size=256)
 
-    USE_IM = True
     PRINT_INTERVAL = 1000
     N_STEPS = 100_0000
-    learn_every = 100
-    TEST_EPISODES = 4000
+    learn_every = 200
+    TEST_EPISODES = 5000
 
     MAX_STEPS = env_info["episode_limit"]
     score_history = []
@@ -61,8 +64,7 @@ if __name__ == '__main__':
     train_info_folder = "/train_info/"
 
     short_map_name = map_name.split("_vs_")[0] + map_name.split("_vs_")[1].split("_")[0]
-    if USE_IM:
-        short_map_name += "_IM"
+    short_map_name += f"_{scenario}"
 
     folder_name = train_info_folder + time_date + "/" + short_map_name + "_" + time_day + "/"
 
@@ -116,7 +118,8 @@ if __name__ == '__main__':
             episode_im_reward = [[] for i in range(n_agents)]
 
         noise_rate = max(noise_rate_min, noise_rate - noise_decay_rate)
-        agents_state_novelties = []
+
+        # HEATMAP START
         heat_map *= 0.9998
         positions = np.array(
             [[env.agents[i].health > 0, env.agents[i].pos.x * hm_size, env.agents[i].pos.y * hm_size] for i in
@@ -137,6 +140,7 @@ if __name__ == '__main__':
         cv2.imshow("Heatmap", heatmap_image)
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break
+        # HEATMAP END
 
         if not evaluate:
             actions_probabilities = maddpg_agents.choose_action(obs, noise_rate)
@@ -148,6 +152,7 @@ if __name__ == '__main__':
             actions = [(actions_probabilities[i] * env.get_avail_actions()[i]).argmax()
                        for i in range(n_agents)]
 
+        # BASELINE MODELLING
         # avail_attack_actions = [[x for x in range(6, len(env.get_avail_agent_actions(i)))
         #                          if env.get_avail_agent_actions(i)[x]] if env.agents[i].health > 0 else [0]
         #                         for i in env.agents.keys()]
@@ -160,7 +165,11 @@ if __name__ == '__main__':
         # actions = [baseline_2v10[episode_step] if episode_step < len(baseline_2v10)
         #            else avail_attack_actions[i][0] for i in range(n_agents)]
 
-        if USE_IM:
+        reward, done, info = env.step(actions)
+        obs_ = env.get_obs()
+
+        if scenario == "MADDPG_GRID_SN":
+            agents_state_novelties = []
             agents_positions = [[env.agents[i].health > 0,
                                  list(map(int, [env.agents[i].pos.x, env.agents[i].pos.y]))]
                                 for i in env.agents.keys()]
@@ -182,12 +191,10 @@ if __name__ == '__main__':
                     alive, agents_sn = agents_state_novelties[agent_idx]
                     im_reward = (1 - (agents_sn - sn_min) / sn_max) ** 2 if alive else 0
                     intrinsic_rewards.append(im_reward)
+        elif scenario == "MADDPG_AE":
+            intrinsic_rewards = maddpg_agents.get_intrinsic_rewards(obs, obs_, actions)
         else:
             intrinsic_rewards = [0 for _ in range(n_agents)]
-
-        reward, done, info = env.step(actions)
-        obs_ = env.get_obs()
-        # prev_agents_positions = agents_positions.copy()
 
         episode_reward.append(reward)
         [episode_im_reward[i].append(intrinsic_rewards[i]) for i in range(n_agents)]
@@ -198,7 +205,7 @@ if __name__ == '__main__':
         if episode_step >= MAX_STEPS:
             done = True
 
-        memory.store_transition(obs, state, actions_probabilities, reward, intrinsic_rewards, obs_, state_,
+        memory.store_transition(obs, state, actions_probabilities, actions, reward, intrinsic_rewards, obs_, state_,
                                 done)
 
         if step % learn_every == 0 and not evaluate:
@@ -224,7 +231,7 @@ if __name__ == '__main__':
             hm_img = cv2.cvtColor(heatmap_image, cv2.COLOR_BGR2RGB)
             writer.add_image('Heatmaps/agents_trajectories', hm_img, step, dataformats='HWC')
 
-            if USE_IM:
+            if scenario == "MADDPG_GRID_SN":
                 sn_img = np.zeros((env.map_x, env.map_y, 3), dtype=np.uint8)
                 sn_img[:, :, 0] = (state_novelty / state_novelty.max() * 255).astype(np.uint8)
                 sn_img = cv2.rotate(cv2.resize(sn_img, dsize=(env.map_x * hm_size, env.map_y * hm_size),
