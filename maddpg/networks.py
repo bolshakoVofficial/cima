@@ -73,13 +73,13 @@ class AutoEncoderLinear(nn.Module):
             nn.Linear(input_dims + n_actions, 128),
             nn.ReLU(),
             nn.Linear(128, 64),
-            nn.ReLU(),
-            nn.Linear(64, 32)
+            # nn.ReLU(),
+            # nn.Linear(64, 32)
         )
 
         self.decoder = nn.Sequential(
-            nn.Linear(32, 64),
-            nn.ReLU(),
+            # nn.Linear(32, 64),
+            # nn.ReLU(),
             nn.Linear(64, 128),
             nn.ReLU(),
             nn.Linear(128, input_dims),

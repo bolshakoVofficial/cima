@@ -18,7 +18,7 @@ def obs_list_to_state_vector(observation):
 
 
 if __name__ == '__main__':
-    map_name = "3m_vs_6zg_IM"
+    map_name = "2m_vs_10zg_IM"
 
     # scenarios: MADDPG, MADDPG_GRID_SN, MADDPG_AE
     scenario = "MADDPG_AE"
@@ -38,18 +38,19 @@ if __name__ == '__main__':
     maddpg_agents = MADDPG(n_agents, obs_shape, n_actions, scenario, alpha=0.001, beta=0.001,
                            checkpoint_dir='tmp/maddpg/')
 
-    memory = MultiAgentReplayBuffer(50000, critic_dims, actor_dims,
+    memory = MultiAgentReplayBuffer(100_000, critic_dims, actor_dims,
                                     n_actions, n_agents, batch_size=1024)
 
     PRINT_INTERVAL = 1000
-    N_STEPS = 1_000_000
-    learn_every = 200
+    N_STEPS = 2_000_000
+    learn_every = 100
     TEST_EPISODES = 100
 
     MAX_STEPS = env_info["episode_limit"]
     score_history = []
     ep_len_history = []
     evaluate = False
+    load_models = False
     best_score = 0
 
     noise_rate = 0.99
@@ -82,7 +83,7 @@ if __name__ == '__main__':
     map_x, map_y = 32, 32
     state_novelty = np.zeros((map_x, map_y), dtype=np.uint32)
 
-    if evaluate:
+    if evaluate or load_models:
         maddpg_agents.load_checkpoint()
 
     done = True
@@ -165,7 +166,14 @@ if __name__ == '__main__':
         # actions = [baseline_2v10[episode_step] if episode_step < len(baseline_2v10)
         #            else avail_attack_actions[i][0] for i in range(n_agents)]
 
-        reward, done, info = env.step(actions)
+        try:
+            reward, done, info = env.step(actions)
+        except AssertionError as e:
+            print(e)
+            print(f"actions: {actions}")
+            print(f"avail_actions: {env.get_avail_actions()}")
+            continue
+
         obs_ = env.get_obs()
 
         if scenario == "MADDPG_GRID_SN":
@@ -227,9 +235,6 @@ if __name__ == '__main__':
             writer.add_scalars('Rewards/IM_rewards', im_rewards_dict, step)
             writer.add_scalars('Stats/end_health_points', healths_dict, step)
             writer.add_scalar('Stats/episode_length', episode_step, step)
-
-            hm_img = cv2.cvtColor(heatmap_image, cv2.COLOR_BGR2RGB)
-            writer.add_image('Heatmaps/agents_trajectories', hm_img, step, dataformats='HWC')
 
             if scenario == "MADDPG_GRID_SN":
                 sn_img = np.zeros((env.map_x, env.map_y, 3), dtype=np.uint8)

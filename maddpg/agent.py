@@ -26,7 +26,7 @@ class Agent:
         if self.scenario == "MADDPG_AE":
             self.env_model = AutoEncoderLinear(actor_dims, n_actions, name=self.agent_name + '_env_model',
                                                lr=0.001, checkpoint_dir=checkpoint_dir)
-            self.im_reward_multiplier = 20
+            self.im_reward_multiplier = 10
 
     def choose_action(self, observation, noise_rate):
         state = T.tensor([observation], dtype=T.float).to(self.actor.device)
