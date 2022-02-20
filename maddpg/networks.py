@@ -64,7 +64,7 @@ class ActorNetwork(nn.Module):
 
 
 class AutoEncoderLinear(nn.Module):
-    def __init__(self, input_dims, n_actions, name, lr, checkpoint_dir):
+    def __init__(self, input_dims, output_dims, n_actions, name, lr, checkpoint_dir):
         super(AutoEncoderLinear, self).__init__()
 
         self.checkpoint_file = os.path.join(checkpoint_dir, name)
@@ -82,7 +82,7 @@ class AutoEncoderLinear(nn.Module):
             # nn.ReLU(),
             nn.Linear(64, 128),
             nn.ReLU(),
-            nn.Linear(128, input_dims),
+            nn.Linear(128, output_dims),
             nn.Tanh()
         )
 

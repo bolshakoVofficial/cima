@@ -38,11 +38,11 @@ if __name__ == '__main__':
     maddpg_agents = MADDPG(n_agents, obs_shape, n_actions, scenario, alpha=0.001, beta=0.001,
                            checkpoint_dir='tmp/maddpg/')
 
-    memory = MultiAgentReplayBuffer(100_000, critic_dims, actor_dims,
+    memory = MultiAgentReplayBuffer(60_000, critic_dims, actor_dims,
                                     n_actions, n_agents, batch_size=1024)
 
     PRINT_INTERVAL = 1000
-    N_STEPS = 2_000_000
+    N_STEPS = 1_200_000
     learn_every = 100
     TEST_EPISODES = 100
 

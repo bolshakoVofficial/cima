@@ -1,5 +1,6 @@
 import torch as T
 import torch.nn.functional as F
+import numpy as np
 from agent import Agent
 
 
@@ -35,7 +36,7 @@ class MADDPG:
     def get_intrinsic_rewards(self, obs, obs_, actions):
         im_rewards = []
         for agent_idx, agent in enumerate(self.agents):
-            im_reward = agent.get_intrinsic_reward(obs[agent_idx], obs_[agent_idx], actions[agent_idx])
+            im_reward = agent.get_intrinsic_reward(obs, obs_[agent_idx], actions)
             im_rewards.append(im_reward)
         return im_rewards
 
@@ -97,13 +98,13 @@ class MADDPG:
         if self.scenario == "MADDPG_AE":
             device = self.agents[0].env_model.device
 
-            obs = T.tensor(actor_states, dtype=T.float).to(device)
+            obs = T.tensor(np.concatenate(actor_states, axis=1), dtype=T.float).to(device)
             obs_ = T.tensor(actor_new_states, dtype=T.float).to(device)
-            actions_taken = T.tensor(actions_taken, dtype=T.float).to(device)
+            actions_taken = T.tensor(np.concatenate(actions_taken, axis=1), dtype=T.float).to(device)
 
             for agent_idx, agent in enumerate(self.agents):
-                predicted_obs = agent.env_model.forward(T.cat([obs[agent_idx],
-                                                               actions_taken[agent_idx]], dim=1))
+                predicted_obs = agent.env_model.forward(T.cat([obs,
+                                                               actions_taken], dim=1))
                 env_model_loss = F.mse_loss(obs_[agent_idx], predicted_obs)
                 agent.env_model.optimizer.zero_grad()
                 env_model_loss.backward(retain_graph=True)

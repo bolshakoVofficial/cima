@@ -10,6 +10,7 @@ class Agent:
         self.gamma = gamma
         self.tau = tau
         self.n_actions = n_actions
+        self.n_agents = n_agents
         self.agent_name = 'agent_%s' % agent_idx
         self.scenario = scenario
         self.actor = ActorNetwork(alpha, actor_dims, n_actions,
@@ -24,9 +25,10 @@ class Agent:
         self.update_network_parameters(tau=1)
 
         if self.scenario == "MADDPG_AE":
-            self.env_model = AutoEncoderLinear(actor_dims, n_actions, name=self.agent_name + '_env_model',
+            self.env_model = AutoEncoderLinear(actor_dims * n_agents, actor_dims, n_actions * n_agents,
+                                               name=self.agent_name + '_env_model',
                                                lr=0.001, checkpoint_dir=checkpoint_dir)
-            self.im_reward_multiplier = 10
+            self.im_reward_multiplier = 20
 
     def choose_action(self, observation, noise_rate):
         state = T.tensor([observation], dtype=T.float).to(self.actor.device)
@@ -38,10 +40,12 @@ class Agent:
 
     def get_intrinsic_reward(self, observation, observation_, action):
         if self.scenario == "MADDPG_AE":
-            action_ohe = np.zeros(self.n_actions)
-            action_ohe[action] = 1
+            action_ohe = np.zeros((self.n_agents, self.n_actions))
+            for i, act in enumerate(action):
+                action_ohe[i, act] = 1
 
-            state = np.concatenate((observation, action_ohe))
+            state = np.concatenate(observation)
+            state = np.concatenate((state, action_ohe.flatten()))
             state = T.tensor([state], dtype=T.float).to(self.actor.device)
             model_out = self.env_model.forward(state)
             im_reward = F.mse_loss(model_out,
