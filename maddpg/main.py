@@ -20,8 +20,8 @@ def obs_list_to_state_vector(observation):
 if __name__ == '__main__':
     map_name = "2m_vs_10zg_IM"
 
-    # scenarios: MADDPG, MADDPG_GRID_SN, MADDPG_AE
-    scenario = "MADDPG_AE"
+    # scenarios: MADDPG, MADDPG_GRID_SN, MADDPG_AE, MADDPG_AE_common
+    scenario = "MADDPG_AE_common"
 
     env = StarCraft2Env(map_name=map_name)
     env_info = env.get_env_info()
@@ -43,7 +43,7 @@ if __name__ == '__main__':
 
     PRINT_INTERVAL = 1000
     N_STEPS = 1_200_000
-    learn_every = 100
+    learn_every = 500
     TEST_EPISODES = 100
 
     MAX_STEPS = env_info["episode_limit"]
@@ -201,11 +201,16 @@ if __name__ == '__main__':
                     intrinsic_rewards.append(im_reward)
         elif scenario == "MADDPG_AE":
             intrinsic_rewards = maddpg_agents.get_intrinsic_rewards(obs, obs_, actions)
+        elif scenario == "MADDPG_AE_common":
+            intrinsic_rewards = maddpg_agents.get_intrinsic_rewards_common(obs, obs_, actions)
         else:
             intrinsic_rewards = [0 for _ in range(n_agents)]
 
         episode_reward.append(reward)
-        [episode_im_reward[i].append(intrinsic_rewards[i]) for i in range(n_agents)]
+        if scenario == "MADDPG_AE_common":
+            [episode_im_reward[i].append(intrinsic_rewards) for i in range(n_agents)]
+        else:
+            [episode_im_reward[i].append(intrinsic_rewards[i]) for i in range(n_agents)]
 
         state = obs_list_to_state_vector(obs)
         state_ = obs_list_to_state_vector(obs_)

@@ -88,11 +88,15 @@ class Agent:
         self.target_actor.save_checkpoint()
         self.critic.save_checkpoint()
         self.target_critic.save_checkpoint()
-        self.env_model.save_checkpoint()
+
+        if self.scenario == "MADDPG_AE":
+            self.env_model.save_checkpoint()
 
     def load_models(self):
         self.actor.load_checkpoint()
         self.target_actor.load_checkpoint()
         self.critic.load_checkpoint()
         self.target_critic.load_checkpoint()
-        self.env_model.load_checkpoint()
+
+        if self.scenario == "MADDPG_AE":
+            self.env_model.load_checkpoint()

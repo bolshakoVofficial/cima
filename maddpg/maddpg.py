@@ -2,6 +2,7 @@ import torch as T
 import torch.nn.functional as F
 import numpy as np
 from agent import Agent
+from networks import AutoEncoderLinear
 
 
 class MADDPG:
@@ -12,19 +13,33 @@ class MADDPG:
         self.n_actions = n_actions
         self.scenario = scenario
         checkpoint_dir += scenario
+        self.device = T.device('cuda' if T.cuda.is_available() else 'cpu')
+
         for agent_idx in range(self.n_agents):
             self.agents.append(Agent(obs_shape, obs_shape * n_agents, n_actions, n_agents, agent_idx,
                                      scenario, alpha=alpha, beta=beta, checkpoint_dir=checkpoint_dir))
+
+        if self.scenario == "MADDPG_AE_common":
+            self.env_model = AutoEncoderLinear(obs_shape * n_agents, obs_shape * n_agents,
+                                               n_actions * n_agents, name='env_model',
+                                               lr=0.001, checkpoint_dir=checkpoint_dir)
+            self.im_reward_multiplier = 20
 
     def save_checkpoint(self):
         print('... saving checkpoint ...')
         for agent in self.agents:
             agent.save_models()
 
+        if self.scenario == "MADDPG_AE_common":
+            self.env_model.save_checkpoint()
+
     def load_checkpoint(self):
         print('... loading checkpoint ...')
         for agent in self.agents:
             agent.load_models()
+
+        if self.scenario == "MADDPG_AE_common":
+            self.env_model.load_checkpoint()
 
     def choose_action(self, raw_obs, noise_rate):
         actions = []
@@ -39,6 +54,25 @@ class MADDPG:
             im_reward = agent.get_intrinsic_reward(obs, obs_[agent_idx], actions)
             im_rewards.append(im_reward)
         return im_rewards
+
+    def get_intrinsic_rewards_common(self, obs, obs_, actions):
+        if self.scenario == "MADDPG_AE_common":
+            action_ohe = np.zeros((self.n_agents, self.n_actions))
+            for i, act in enumerate(actions):
+                action_ohe[i, act] = 1
+
+            state = np.concatenate(obs)
+            state = np.concatenate((state, action_ohe.flatten()))
+            state = T.tensor([state], dtype=T.float).to(self.device)
+            state_ = np.concatenate(obs_)
+            state_ = T.tensor([state_], dtype=T.float).to(self.device)
+
+            model_out = self.env_model.forward(state)
+            im_reward = F.mse_loss(model_out, state_).cpu().detach().numpy() * self.im_reward_multiplier
+        else:
+            im_reward = 0
+
+        return im_reward
 
     def learn(self, memory):
         if not memory.ready():
@@ -105,7 +139,20 @@ class MADDPG:
             for agent_idx, agent in enumerate(self.agents):
                 predicted_obs = agent.env_model.forward(T.cat([obs,
                                                                actions_taken], dim=1))
-                env_model_loss = F.mse_loss(obs_[agent_idx], predicted_obs)
+                env_model_loss = F.mse_loss(predicted_obs, obs_[agent_idx])
                 agent.env_model.optimizer.zero_grad()
                 env_model_loss.backward(retain_graph=True)
                 agent.env_model.optimizer.step()
+
+        elif self.scenario == "MADDPG_AE_common":
+            device = self.device
+
+            obs = T.tensor(np.concatenate(actor_states, axis=1), dtype=T.float).to(device)
+            obs_ = T.tensor(np.concatenate(actor_new_states, axis=1), dtype=T.float).to(device)
+            actions_taken = T.tensor(np.concatenate(actions_taken, axis=1), dtype=T.float).to(device)
+
+            predicted_obs = self.env_model.forward(T.cat([obs, actions_taken], dim=1))
+            env_model_loss = F.mse_loss(predicted_obs, obs_)
+            self.env_model.optimizer.zero_grad()
+            env_model_loss.backward(retain_graph=True)
+            self.env_model.optimizer.step()

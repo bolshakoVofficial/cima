@@ -68,21 +68,26 @@ class AutoEncoderLinear(nn.Module):
         super(AutoEncoderLinear, self).__init__()
 
         self.checkpoint_file = os.path.join(checkpoint_dir, name)
+        self.dropout_rate = 0.2
 
         self.encoder = nn.Sequential(
-            nn.Linear(input_dims + n_actions, 128),
+            nn.Linear(input_dims + n_actions, 256),
             nn.ReLU(),
-            nn.Linear(128, 64),
-            # nn.ReLU(),
-            # nn.Linear(64, 32)
+            nn.Dropout(self.dropout_rate),
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Dropout(self.dropout_rate),
+            nn.Linear(128, 64)
         )
 
         self.decoder = nn.Sequential(
-            # nn.Linear(32, 64),
-            # nn.ReLU(),
             nn.Linear(64, 128),
             nn.ReLU(),
-            nn.Linear(128, output_dims),
+            nn.Dropout(self.dropout_rate),
+            nn.Linear(128, 256),
+            nn.ReLU(),
+            nn.Dropout(self.dropout_rate),
+            nn.Linear(256, output_dims),
             nn.Tanh()
         )
 
