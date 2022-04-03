@@ -73,10 +73,10 @@ class AutoEncoderLinear(nn.Module):
         self.encoder = nn.Sequential(
             nn.Linear(input_dims + n_actions, 256),
             nn.ReLU(),
-            nn.Dropout(self.dropout_rate),
+            # nn.Dropout(self.dropout_rate),
             nn.Linear(256, 128),
             nn.ReLU(),
-            nn.Dropout(self.dropout_rate),
+            # nn.Dropout(self.dropout_rate),
             nn.Linear(128, 64)
         )
 
@@ -106,3 +106,107 @@ class AutoEncoderLinear(nn.Module):
 
     def load_checkpoint(self):
         self.load_state_dict(T.load(self.checkpoint_file))
+
+
+class VAE(nn.Module):
+    def __init__(self, input_dims, output_dims, n_actions, name, lr, checkpoint_dir):
+        super(VAE, self).__init__()
+
+        self.checkpoint_file = os.path.join(checkpoint_dir, name)
+        # self.dropout_rate = 0.2
+
+        self.encoder = nn.Sequential(
+            nn.Linear(input_dims + n_actions, 256),
+            nn.ReLU(),
+            # nn.Dropout(self.dropout_rate),
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            # nn.Dropout(self.dropout_rate),
+            nn.Linear(128, 64)
+        )
+
+        # distribution parameters
+        self.fc_mu = nn.Linear(64, 32)
+        self.fc_var = nn.Linear(64, 32)
+
+        self.decoder = nn.Sequential(
+            nn.Linear(32, 64),
+            nn.ReLU(),
+            # nn.Dropout(self.dropout_rate),
+            nn.Linear(64, 128),
+            nn.ReLU(),
+            # nn.Dropout(self.dropout_rate),
+            nn.Linear(128, output_dims),
+            nn.Tanh()
+        )
+
+        # for the gaussian likelihood
+        self.log_scale = nn.Parameter(T.Tensor([0.0]))
+
+        self.optimizer = optim.Adam(self.parameters(), lr=lr)
+        self.device = T.device('cuda' if T.cuda.is_available() else 'cpu')
+
+        self.to(self.device)
+
+    def forward_kl(self, x):
+        encoded_obs = self.encoder(x)
+        mu, log_var = self.fc_mu(encoded_obs), self.fc_var(encoded_obs)
+
+        std = T.exp(log_var / 2)
+        q = T.distributions.Normal(mu, std)
+        z = q.rsample()
+
+        return self.kl_divergence(z, mu, std)
+
+    def forward(self, x):
+        # encode input to get the mu and variance parameters
+        encoded_obs = self.encoder(x)
+        mu, log_var = self.fc_mu(encoded_obs), self.fc_var(encoded_obs)
+
+        # sample z from q
+        std = T.exp(log_var / 2)
+        q = T.distributions.Normal(mu, std)
+        z = q.rsample()
+
+        # decode and get reconstruction loss
+        predicted_obs = self.decoder(z)
+
+        # kl-divergence (and Intrinsic Reward)
+        kl = self.kl_divergence(z, mu, std)
+
+        return predicted_obs, kl
+
+    def save_checkpoint(self):
+        T.save(self.state_dict(), self.checkpoint_file)
+
+    def load_checkpoint(self):
+        self.load_state_dict(T.load(self.checkpoint_file))
+
+    @staticmethod
+    def gaussian_likelihood(x_hat, log_scale, x):
+        scale = T.exp(log_scale)
+        mean = x_hat
+        dist = T.distributions.Normal(mean, scale)
+
+        # measure prob of seeing image under p(x|z)
+        log_pxz = dist.log_prob(x)
+
+        return log_pxz.sum(dim=1)
+
+    @staticmethod
+    def kl_divergence(z, mu, std):
+        # --------------------------
+        # Monte carlo KL divergence
+        # --------------------------
+        # 1. define the first two probabilities (in this case Normal for both)
+        p = T.distributions.Normal(T.zeros_like(mu), T.ones_like(std))
+        q = T.distributions.Normal(mu, std)
+
+        # 2. get the probabilities from the equation
+        log_qzx = q.log_prob(z)
+        log_pz = p.log_prob(z)
+
+        # kl
+        kl = (log_qzx - log_pz)
+        kl = kl.sum(-1)
+        return kl

@@ -1,7 +1,7 @@
 import torch as T
 import torch.nn.functional as F
 import numpy as np
-from networks import ActorNetwork, CriticNetwork, AutoEncoderLinear
+from networks import ActorNetwork, CriticNetwork, AutoEncoderLinear, VAE
 
 
 class Agent:
@@ -29,6 +29,11 @@ class Agent:
                                                name=self.agent_name + '_env_model',
                                                lr=0.001, checkpoint_dir=checkpoint_dir)
             self.im_reward_multiplier = 20
+        elif self.scenario == "MADDPG_VAE":
+            self.env_model = VAE(actor_dims * n_agents, actor_dims, n_actions * n_agents,
+                                 name=self.agent_name + '_env_model',
+                                 lr=0.001, checkpoint_dir=checkpoint_dir)
+            self.im_reward_multiplier = 20
 
     def choose_action(self, observation, noise_rate):
         state = T.tensor([observation], dtype=T.float).to(self.actor.device)
@@ -52,6 +57,19 @@ class Agent:
                                    T.from_numpy(np.expand_dims(observation_, 0)).to(
                                        self.env_model.device)).cpu().detach().numpy() * self.im_reward_multiplier
             im_reward = im_reward.tolist()
+
+        elif self.scenario == "MADDPG_VAE":
+            action_ohe = np.zeros((self.n_agents, self.n_actions))
+            for i, act in enumerate(action):
+                action_ohe[i, act] = 1
+
+            state = np.concatenate(observation)
+            state = np.concatenate((state, action_ohe.flatten()))
+            state = T.tensor([state], dtype=T.float).to(self.actor.device)
+            model_out = self.env_model.forward_kl(state)
+            im_reward = model_out.cpu().detach().numpy() * self.im_reward_multiplier
+            im_reward = abs(im_reward.tolist()[0])
+
         else:
             im_reward = 0
 
@@ -89,7 +107,7 @@ class Agent:
         self.critic.save_checkpoint()
         self.target_critic.save_checkpoint()
 
-        if self.scenario == "MADDPG_AE":
+        if self.scenario in ["MADDPG_AE", "MADDPG_VAE"]:
             self.env_model.save_checkpoint()
 
     def load_models(self):
@@ -98,5 +116,5 @@ class Agent:
         self.critic.load_checkpoint()
         self.target_critic.load_checkpoint()
 
-        if self.scenario == "MADDPG_AE":
+        if self.scenario in ["MADDPG_AE", "MADDPG_VAE"]:
             self.env_model.load_checkpoint()

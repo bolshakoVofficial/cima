@@ -18,10 +18,10 @@ def obs_list_to_state_vector(observation):
 
 
 if __name__ == '__main__':
-    map_name = "2m_vs_10zg_IM"
+    map_name = "3m_vs_15zg_IM"
 
-    # scenarios: MADDPG, MADDPG_GRID_SN, MADDPG_AE, MADDPG_AE_common
-    scenario = "MADDPG_AE_common"
+    # scenarios: MADDPG, MADDPG_GRID_SN, MADDPG_AE, MADDPG_AE_common, MADDPG_VAE
+    scenario = "MADDPG_VAE"
 
     env = StarCraft2Env(map_name=map_name)
     env_info = env.get_env_info()
@@ -38,12 +38,12 @@ if __name__ == '__main__':
     maddpg_agents = MADDPG(n_agents, obs_shape, n_actions, scenario, alpha=0.001, beta=0.001,
                            checkpoint_dir='tmp/maddpg/')
 
-    memory = MultiAgentReplayBuffer(60_000, critic_dims, actor_dims,
-                                    n_actions, n_agents, batch_size=1024)
+    memory = MultiAgentReplayBuffer(100_000, critic_dims, actor_dims,
+                                    n_actions, n_agents, batch_size=2048)
 
     PRINT_INTERVAL = 1000
-    N_STEPS = 1_200_000
-    learn_every = 500
+    N_STEPS = 1_500_000
+    learn_every = 100
     TEST_EPISODES = 100
 
     MAX_STEPS = env_info["episode_limit"]
@@ -53,7 +53,7 @@ if __name__ == '__main__':
     load_models = False
     best_score = 0
 
-    noise_rate = 0.99
+    noise_rate = 0.9
     noise_rate_min = 0.01
     noise_decay_rate = noise_rate / N_STEPS
 
@@ -203,6 +203,8 @@ if __name__ == '__main__':
             intrinsic_rewards = maddpg_agents.get_intrinsic_rewards(obs, obs_, actions)
         elif scenario == "MADDPG_AE_common":
             intrinsic_rewards = maddpg_agents.get_intrinsic_rewards_common(obs, obs_, actions)
+        elif scenario == "MADDPG_VAE":
+            intrinsic_rewards = maddpg_agents.get_intrinsic_rewards(obs, obs_, actions)
         else:
             intrinsic_rewards = [0 for _ in range(n_agents)]
 

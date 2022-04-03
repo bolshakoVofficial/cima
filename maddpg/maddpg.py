@@ -137,8 +137,7 @@ class MADDPG:
             actions_taken = T.tensor(np.concatenate(actions_taken, axis=1), dtype=T.float).to(device)
 
             for agent_idx, agent in enumerate(self.agents):
-                predicted_obs = agent.env_model.forward(T.cat([obs,
-                                                               actions_taken], dim=1))
+                predicted_obs = agent.env_model.forward(T.cat([obs, actions_taken], dim=1))
                 env_model_loss = F.mse_loss(predicted_obs, obs_[agent_idx])
                 agent.env_model.optimizer.zero_grad()
                 env_model_loss.backward(retain_graph=True)
@@ -156,3 +155,22 @@ class MADDPG:
             self.env_model.optimizer.zero_grad()
             env_model_loss.backward(retain_graph=True)
             self.env_model.optimizer.step()
+
+        elif self.scenario == "MADDPG_VAE":
+            device = self.agents[0].env_model.device
+
+            obs = T.tensor(np.concatenate(actor_states, axis=1), dtype=T.float).to(device)
+            obs_ = T.tensor(actor_new_states, dtype=T.float).to(device)
+            actions_taken = T.tensor(np.concatenate(actions_taken, axis=1), dtype=T.float).to(device)
+
+            for agent_idx, agent in enumerate(self.agents):
+                predicted_obs, kl = agent.env_model.forward(T.cat([obs, actions_taken], dim=1))
+                reconstruction_loss = agent.env_model.gaussian_likelihood(predicted_obs,
+                                                                          agent.env_model.log_scale,
+                                                                          obs_[agent_idx])
+                # evidence lower bound (elbo loss)
+                env_model_loss = (kl - reconstruction_loss).mean()
+
+                agent.env_model.optimizer.zero_grad()
+                env_model_loss.backward(retain_graph=True)
+                agent.env_model.optimizer.step()
