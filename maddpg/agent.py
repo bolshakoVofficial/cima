@@ -68,7 +68,8 @@ class Agent:
             state = T.tensor([state], dtype=T.float).to(self.actor.device)
             model_out = self.env_model.forward_kl(state)
             im_reward = model_out.cpu().detach().numpy() * self.im_reward_multiplier
-            im_reward = abs(im_reward.tolist()[0])
+            # im_reward = abs(im_reward.tolist()[0])
+            im_reward = im_reward.tolist()
 
         else:
             im_reward = 0

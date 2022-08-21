@@ -18,10 +18,10 @@ def obs_list_to_state_vector(observation):
 
 
 if __name__ == '__main__':
-    map_name = "3m_vs_15zg_IM"
+    map_name = "2m_vs_2zg_IM"
 
     # scenarios: MADDPG, MADDPG_GRID_SN, MADDPG_AE, MADDPG_AE_common, MADDPG_VAE
-    scenario = "MADDPG_VAE"
+    scenario = "MADDPG"
 
     env = StarCraft2Env(map_name=map_name)
     env_info = env.get_env_info()
@@ -53,7 +53,7 @@ if __name__ == '__main__':
     load_models = False
     best_score = 0
 
-    noise_rate = 0.9
+    noise_rate = 0.99
     noise_rate_min = 0.01
     noise_decay_rate = noise_rate / N_STEPS
 
@@ -81,7 +81,7 @@ if __name__ == '__main__':
     start = time.time()
 
     map_x, map_y = 32, 32
-    state_novelty = np.zeros((map_x, map_y), dtype=np.uint32)
+    state_novelty = [np.zeros((map_x, map_y), dtype=np.uint32) for _ in range(n_agents)]
 
     if evaluate or load_models:
         maddpg_agents.load_checkpoint()
@@ -181,13 +181,12 @@ if __name__ == '__main__':
             agents_positions = [[env.agents[i].health > 0,
                                  list(map(int, [env.agents[i].pos.x, env.agents[i].pos.y]))]
                                 for i in env.agents.keys()]
-            for alive, pos in agents_positions:
+            for idx, (alive, pos) in enumerate(agents_positions):
                 if alive:
-                    state_novelty[pos[0], pos[1]] += 1
+                    state_novelty[idx][pos[0], pos[1]] += 1
 
-                agents_state_novelties.append([alive, state_novelty[pos[0], pos[1]]])
+                agents_state_novelties.append([alive, state_novelty[idx][pos[0], pos[1]]])
 
-            sn_min, sn_max = state_novelty.min(), state_novelty.max()
             if not len(prev_agents_positions):
                 prev_agents_positions = agents_positions.copy()
 
@@ -197,6 +196,7 @@ if __name__ == '__main__':
                     intrinsic_rewards.append(0)
                 else:
                     alive, agents_sn = agents_state_novelties[agent_idx]
+                    sn_min, sn_max = state_novelty[agent_idx].min(), state_novelty[agent_idx].max()
                     im_reward = (1 - (agents_sn - sn_min) / sn_max) ** 2 if alive else 0
                     intrinsic_rewards.append(im_reward)
         elif scenario == "MADDPG_AE":
@@ -224,7 +224,10 @@ if __name__ == '__main__':
                                 done)
 
         if step % learn_every == 0 and not evaluate:
-            maddpg_agents.learn(memory)
+            losses = maddpg_agents.learn(memory)
+            for k, v in losses.items():
+                loss_dict = {f"{k}_{idx}": x for idx, x in enumerate(v)}
+                writer.add_scalars(f'Losses/{k}', loss_dict, step)
 
         obs = obs_
 
@@ -243,12 +246,12 @@ if __name__ == '__main__':
             writer.add_scalars('Stats/end_health_points', healths_dict, step)
             writer.add_scalar('Stats/episode_length', episode_step, step)
 
-            if scenario == "MADDPG_GRID_SN":
-                sn_img = np.zeros((env.map_x, env.map_y, 3), dtype=np.uint8)
-                sn_img[:, :, 0] = (state_novelty / state_novelty.max() * 255).astype(np.uint8)
-                sn_img = cv2.rotate(cv2.resize(sn_img, dsize=(env.map_x * hm_size, env.map_y * hm_size),
-                                               interpolation=cv2.INTER_CUBIC), cv2.ROTATE_90_COUNTERCLOCKWISE)
-                writer.add_image('Heatmaps/state_novelty_grid', sn_img, step, dataformats='HWC')
+            # if scenario == "MADDPG_GRID_SN":
+            #     sn_img = np.zeros((env.map_x, env.map_y, 3), dtype=np.uint8)
+            #     sn_img[:, :, 0] = (state_novelty / state_novelty.max() * 255).astype(np.uint8)
+            #     sn_img = cv2.rotate(cv2.resize(sn_img, dsize=(env.map_x * hm_size, env.map_y * hm_size),
+            #                                    interpolation=cv2.INTER_CUBIC), cv2.ROTATE_90_COUNTERCLOCKWISE)
+            #     writer.add_image('Heatmaps/state_novelty_grid', sn_img, step, dataformats='HWC')
 
             avg_score = np.mean(score_history[-20:])
             if not evaluate:

@@ -75,8 +75,10 @@ class MADDPG:
         return im_reward
 
     def learn(self, memory):
+        losses = {}
+
         if not memory.ready():
-            return
+            return losses
 
         actor_states, states, actions, actions_taken, rewards, \
         actor_new_states, states_, dones = memory.sample_buffer()
@@ -85,7 +87,7 @@ class MADDPG:
 
         states = T.tensor(states, dtype=T.float).to(device)
         actions = T.tensor(actions, dtype=T.float).to(device)
-        rewards = T.tensor(rewards).to(device)
+        rewards = T.tensor(rewards, dtype=T.float).to(device)
         states_ = T.tensor(states_, dtype=T.float).to(device)
         dones = T.tensor(dones).to(device)
 
@@ -129,6 +131,9 @@ class MADDPG:
 
             agent.update_network_parameters()
 
+            losses["critic"] = losses.get("critic", []) + [critic_loss.cpu().detach().numpy().tolist()]
+            losses["actor"] = losses.get("actor", []) + [actor_loss.cpu().detach().numpy().tolist()]
+
         if self.scenario == "MADDPG_AE":
             device = self.agents[0].env_model.device
 
@@ -143,6 +148,8 @@ class MADDPG:
                 env_model_loss.backward(retain_graph=True)
                 agent.env_model.optimizer.step()
 
+                losses["env_model_AE"] = losses.get("env_model_AE", []) + [env_model_loss.cpu().detach().numpy().tolist()]
+
         elif self.scenario == "MADDPG_AE_common":
             device = self.device
 
@@ -156,6 +163,8 @@ class MADDPG:
             env_model_loss.backward(retain_graph=True)
             self.env_model.optimizer.step()
 
+            losses["env_model_AE_common"] = losses.get("env_model_AE_common", []) + [env_model_loss.cpu().detach().numpy().tolist()]
+
         elif self.scenario == "MADDPG_VAE":
             device = self.agents[0].env_model.device
 
@@ -165,12 +174,26 @@ class MADDPG:
 
             for agent_idx, agent in enumerate(self.agents):
                 predicted_obs, kl = agent.env_model.forward(T.cat([obs, actions_taken], dim=1))
-                reconstruction_loss = agent.env_model.gaussian_likelihood(predicted_obs,
-                                                                          agent.env_model.log_scale,
-                                                                          obs_[agent_idx])
+                # reconstruction_loss = agent.env_model.gaussian_likelihood(predicted_obs,
+                #                                                           agent.env_model.log_scale,
+                #                                                           obs_[agent_idx])
+
+                # MSE rec loss
+                reconstruction_loss = F.mse_loss(predicted_obs, obs_[agent_idx])
+
                 # evidence lower bound (elbo loss)
-                env_model_loss = (kl - reconstruction_loss).mean()
+                # env_model_loss = (kl - reconstruction_loss).mean()
+                env_model_loss = kl + reconstruction_loss
 
                 agent.env_model.optimizer.zero_grad()
                 env_model_loss.backward(retain_graph=True)
                 agent.env_model.optimizer.step()
+
+                kl_loss_mean = kl.mean().cpu().detach().numpy().tolist()
+                rec_loss_mean = reconstruction_loss.mean().cpu().detach().numpy().tolist()
+                env_model_loss_mean = env_model_loss.cpu().detach().numpy().tolist()
+                losses["env_model_VAE_kl"] = losses.get("env_model_VAE_kl", []) + [kl_loss_mean]
+                losses["env_model_VAE_rec"] = losses.get("env_model_VAE_rec", []) + [rec_loss_mean]
+                losses["env_model_VAE"] = losses.get("env_model_VAE", []) + [env_model_loss_mean]
+
+        return losses

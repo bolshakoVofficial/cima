@@ -152,11 +152,14 @@ class VAE(nn.Module):
         encoded_obs = self.encoder(x)
         mu, log_var = self.fc_mu(encoded_obs), self.fc_var(encoded_obs)
 
-        std = T.exp(log_var / 2)
-        q = T.distributions.Normal(mu, std)
-        z = q.rsample()
+        # std = T.exp(log_var / 2)
+        # q = T.distributions.Normal(mu, std)
+        # z = q.rsample()
+        # kl = self.kl_divergence(z, mu, std)
 
-        return self.kl_divergence(z, mu, std)
+        kl_vanilla_vae = self.kld_vanilla_vae(mu, log_var)
+
+        return kl_vanilla_vae
 
     def forward(self, x):
         # encode input to get the mu and variance parameters
@@ -172,9 +175,10 @@ class VAE(nn.Module):
         predicted_obs = self.decoder(z)
 
         # kl-divergence (and Intrinsic Reward)
-        kl = self.kl_divergence(z, mu, std)
+        # kl = self.kl_divergence(z, mu, std)
+        kl_vanilla_vae = self.kld_vanilla_vae(mu, log_var)
 
-        return predicted_obs, kl
+        return predicted_obs, kl_vanilla_vae
 
     def save_checkpoint(self):
         T.save(self.state_dict(), self.checkpoint_file)
@@ -209,4 +213,9 @@ class VAE(nn.Module):
         # kl
         kl = (log_qzx - log_pz)
         kl = kl.sum(-1)
+        return kl
+
+    @staticmethod
+    def kld_vanilla_vae(mu, log_var):
+        kl = T.mean(-0.5 * T.sum(1 + log_var - mu ** 2 - log_var.exp(), dim=1), dim=0)
         return kl
