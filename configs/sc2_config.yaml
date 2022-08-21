@@ -1,5 +1,0 @@
-env_args:
-  map_name: "2m_vs_10zg_IM"
-  difficulty: "7"
-  reward_only_positive: False
-  reward_scale_rate: 200
