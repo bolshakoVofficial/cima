@@ -1,3 +1,4 @@
+import argparse
 import numpy as np
 import random
 import cv2
@@ -9,6 +10,13 @@ import datetime
 import time
 from torch.utils.tensorboard import SummaryWriter
 
+parser = argparse.ArgumentParser(description='CIMA training loop')
+parser.add_argument('--scenario', type=str,
+                    help='Available scenarios: MADDPG, MADDPG_GRID_SN, MADDPG_AE, MADDPG_AE_common, MADDPG_VAE')
+parser.add_argument('--map_name', type=str,
+                    help='Available maps: 2m_vs_2zg_IM, 2m_vs_10zg_IM')
+parser.add_argument('--n_steps', type=int, help='Training steps')
+
 
 def obs_list_to_state_vector(observation):
     state = np.array([])
@@ -18,10 +26,13 @@ def obs_list_to_state_vector(observation):
 
 
 if __name__ == '__main__':
-    map_name = "2m_vs_2zg_IM"
+    args = parser.parse_args()
+    # map_name = "2m_vs_2zg_IM"
+    map_name = args.map_name
 
     # scenarios: MADDPG, MADDPG_GRID_SN, MADDPG_AE, MADDPG_AE_common, MADDPG_VAE
-    scenario = "MADDPG"
+    # scenario = "MADDPG"
+    scenario = args.map_name
 
     env = StarCraft2Env(map_name=map_name)
     env_info = env.get_env_info()
@@ -42,7 +53,8 @@ if __name__ == '__main__':
                                     n_actions, n_agents, batch_size=2048)
 
     PRINT_INTERVAL = 1000
-    N_STEPS = 1_500_000
+    # N_STEPS = 1_500_000
+    N_STEPS = args.n_steps
     learn_every = 100
     TEST_EPISODES = 100
 
