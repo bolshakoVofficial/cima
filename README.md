@@ -12,6 +12,7 @@ Create virtual environment and install dependencues:
 ```
 python -m venv venv_cima
 source venv_cima/bin/activate
+pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
